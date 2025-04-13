@@ -1,0 +1,190 @@
+---
+title: Salaries at Globe
+output:
+  github_document:
+  html_preview: false
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "figures/",
+  fig.width = 13,
+  fig.height = 5
+)
+```
+
+```{r}
+library(ggplot2)
+library(scales)
+library(forcats)
+library(tidytext)
+library(dplyr)
+library(xlsx)
+```
+
+### Read institute names and their abbreviations
+
+```{r}
+inst_df <- read.xlsx("salaries.xlsx", sheetName = "institutes", header = FALSE) %>% setNames("id")
+parsed_ids <- strsplit(inst_df$id, " \\(|\\)")
+inst_df <- inst_df %>%
+  mutate(
+    name = sapply(parsed_ids, `[[`, 1),
+    id = sapply(parsed_ids, `[[`, 2)
+  )
+
+inst_df
+```
+
+### Read salary information
+
+#### PhDs
+
+```{r}
+phd_df <- read.xlsx("salaries.xlsx", sheetName = "PhD") %>%
+  .[-nrow(.), c("Institut", "Avg..Fuldtidsløn", "Median")] %>%
+  setNames(c("inst_id", "mean", "median")) %>%
+  mutate(role = "PhD")
+
+phd_df
+```
+
+#### Postdocs
+
+```{r}
+postdoc_df <- read.xlsx("salaries.xlsx", sheetName = "postdoc") %>%
+  .[-nrow(.), c("Institut", "Avg..Fuldtidsløn", "Median")] %>%
+  setNames(c("inst_id", "mean", "median")) %>%
+  mutate(role = "postdoc")
+
+postdoc_df
+```
+
+#### Assistant professors
+
+```{r}
+adjunkt_df <- read.xlsx("salaries.xlsx", sheetName = "adjunkt") %>%
+  .[-nrow(.), c("Institut", "Avg..Fuldtidsløn", "Median")] %>%
+  setNames(c("inst_id", "mean", "median")) %>%
+  mutate(role = "assistant professor")
+
+adjunkt_df
+```
+
+#### Associate professors
+
+```{r}
+lektor_df <- read.xlsx("salaries.xlsx", sheetName = "lektor") %>%
+  .[-nrow(.), c("Institut", "Avg..Fuldtidsløn", "Median")] %>%
+  setNames(c("inst_id", "mean", "median")) %>%
+  mutate(role = "associate professor")
+
+lektor_df
+```
+
+#### Combine into a single tidy table
+
+```{r}
+salaries_df <- rbind(phd_df, postdoc_df, adjunkt_df, lektor_df) %>%
+  mutate(
+    median_year = median,
+    median_month = median_year / 12,
+    mean_year = mean,
+    mean_month = mean_year / 12,
+    is_globe = inst_id == "GLOBE",
+    role = factor(role, levels = c("PhD", "postdoc",
+                                   "assistant professor", "associate professor"))
+  ) %>%
+  as_tibble
+
+salaries_df
+```
+
+#### Compute mean and median
+
+```{r}
+summary_df <- group_by(salaries_df, role) %>%
+  summarise(
+    mean_month = mean(mean_month),
+    mean_year = mean(mean_year),
+    median_month = median(median_month),
+    median_year = median(median_year)
+  )
+
+summary_df
+```
+
+```{r}
+plot_salaries <- function(salaries_df, summary_df, stat, time) {
+  salaries_df_cols <- c("inst_id", "role", paste0(stat, "_", time), "is_globe")
+  summary_df_cols <- c("role", paste0(stat, "_", time))
+
+  sal_df <- salaries_df[salaries_df_cols]
+  sum_df <- summary_df[summary_df_cols]
+  
+  salaries_df_cols2 <- c("inst_id", "role", "stat", "is_globe")
+  summary_df_cols2 <- c("role", "stat")
+
+  names(sal_df) <- salaries_df_cols2
+  names(sum_df) <- summary_df_cols2
+
+  sal_df %>%
+  mutate(factor_id = reorder_within(inst_id, stat, within = role)) %>%
+  ggplot(aes(factor_id, stat, color = is_globe)) +
+    geom_point() +
+    geom_hline(data = sum_df, aes(yintercept = stat, linetype = paste("SUND", !!stat), alpha = 0.8)) +
+    scale_x_reordered() +
+    scale_y_continuous(labels = label_comma(), breaks = breaks_pretty()) +
+    scale_color_manual(values = c("black", "red")) +
+    scale_linetype_manual(values = "dashed") +
+    guides(color = "none", size = "none", alpha = "none", linetype = guide_legend("")) +
+    labs(
+      title = paste(tools::toTitleCase(stat), paste0(time, "ly"), "salaries across institutes at SUND"),
+      x = "",
+      y = "salary [dkk]"
+    ) +
+    theme_bw() +
+    theme(text = element_text(size = 13),
+          legend.position = "bottom",
+          axis.text.x = element_text(hjust = 1, angle = 45)) +
+    facet_wrap(~ role, scales = "free", nrow = 1)
+}
+```
+
+#### Yearly statistics
+
+```{r}
+p_median_y <- plot_salaries(salaries_df, summary_df, "median", "year")
+p_median_y
+
+p_mean_y <- plot_salaries(salaries_df, summary_df, "mean", "year")
+p_mean_y
+```
+
+#### Monthly statistics
+
+These numbers are just the yearly numbers above divided by 12 (I personally find these
+easier to understand than the yearly numbers, in the context of monthly rent and other
+expenses, so I'm showing these as well).
+
+```{r}
+p_median_m <- plot_salaries(salaries_df, summary_df, "median", "month")
+p_median_m
+
+p_mean_m <- plot_salaries(salaries_df, summary_df, "mean", "month")
+p_mean_m
+```
+
+#### Save all figures to a PDF
+
+```{r}
+pdf("salaries.pdf", width = 13, height = 5)
+print(p_median_y)
+print(p_mean_y)
+print(p_median_m)
+print(p_mean_m)
+dev.off()
+```
+
