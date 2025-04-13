@@ -1,4 +1,4 @@
-Salaries at Globe
+Salaries at SUND (2023)
 ================
 
 ``` r
