@@ -290,7 +290,7 @@ p_mean_m
 #### Save all figures to a PDF
 
 ``` r
-pdf("salaries.pdf", width = 13, height = 5)
+pdf("salaries.pdf", width = 14, height = 5)
 print(p_median_y)
 print(p_mean_y)
 print(p_median_m)
